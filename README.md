@@ -5,7 +5,7 @@
 1. git同步到本地
 2. 使用VS Code打开工程
 
-安装pytorch和其他依赖项
+3. 安装pytorch和其他依赖项
 
 F:
 cd F:\Python_Projects\EZDiffusion
