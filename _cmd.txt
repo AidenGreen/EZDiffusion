@@ -1,0 +1,49 @@
+启动训练
+
+F:
+cd F:\Python_Projects\EZDiffusion
+conda activate .\_env
+set CUDA_VISIBLE_DEVICES=0
+python train.py
+
+
+启动tensorboard
+
+F:
+cd F:\Python_Projects\EZDiffusion
+conda activate .\_env
+set CUDA_VISIBLE_DEVICES=0
+tensorboard --logdir runs --host 127.0.0.1 --port 6006
+
+http://127.0.0.1:6006
+
+
+
+可视化单通道图像
+
+img = ...
+import numpy as np
+from PIL import Image
+normalize = lambda x: (x - x.min()) / (x.max() - x.min() + 1e-6)
+Image.fromarray(np.uint8(255 * normalize(img[0][0].detach().cpu().numpy()))).show()
+
+
+可视化彩色图像
+
+img = ...
+import numpy as np
+from PIL import Image
+normalize = lambda x: (x - x.min()) / (x.max() - x.min() + 1e-6)
+Image.fromarray(np.uint8(255 * normalize(np.transpose(img[0].detach().cpu().numpy(), (1, 2, 0))))).show()
+
+
+可视化特征图
+
+feat = ...
+import numpy as np
+from PIL import Image
+x = feat[0].detach().cpu().numpy()
+x = (x - x.min(axis=(1, 2), keepdims=True)) / (x.max(axis=(1, 2), keepdims=True) - x.min(axis=(1, 2), keepdims=True) + 1e-6)
+x = x.mean(axis=0)
+normalize = lambda x: (x - x.min()) / (x.max() - x.min() + 1e-6)
+Image.fromarray(np.uint8(255 * normalize(x))).show()
