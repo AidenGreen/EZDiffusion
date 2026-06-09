@@ -9,8 +9,8 @@ import torch.nn.functional as F
 import config
 from utils import build_model_input
 
-from _thirdparty.diffusers.src.diffusers.models.unets.unet_2d import UNet2DModel
-from _thirdparty.diffusers.src.diffusers.schedulers.scheduling_ddpm import DDPMScheduler
+from _thirdparty.diffusers.models.unets.unet_2d import UNet2DModel
+from _thirdparty.diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 
 
 class DiffusionModel(nn.Module):
