@@ -31,7 +31,7 @@ def denormalize(x):
 
 def build_model_input(noisy_images, conditions=None):
     """
-    根据是否存在条件图，将 noisy_images 和 conditions 拼接成模型输入。
+    将 noisy_images 和 conditions 拼接成扩散模型输入。
     """
     if conditions is None:
         return noisy_images
@@ -39,12 +39,59 @@ def build_model_input(noisy_images, conditions=None):
     return torch.cat([noisy_images, conditions], dim=1)
 
 
+def frequency_lowpass_condition(images, keep_rate=0.25):
+    """
+    使用高斯频域低通生成低频引导图，输入输出均为 [B, C, H, W]。
+    """
+    if images.ndim != 4:
+        raise ValueError(
+            f"frequency_lowpass_condition 只支持 [B, C, H, W]，当前 shape={images.shape}"
+        )
+
+    keep_rate = float(max(min(keep_rate, 1.0), 1e-4))
+
+    x = images.float()
+    _, _, h, w = x.shape
+
+    fy = torch.linspace(
+        -1.0,
+        1.0,
+        h,
+        device=x.device,
+        dtype=x.dtype,
+    ).view(1, 1, h, 1)
+
+    fx = torch.linspace(
+        -1.0,
+        1.0,
+        w,
+        device=x.device,
+        dtype=x.dtype,
+    ).view(1, 1, 1, w)
+
+    radius_square = fx * fx + fy * fy
+
+    gaussian_mask = torch.exp(
+        -0.5 * radius_square / (keep_rate * keep_rate)
+    )
+
+    freq = torch.fft.fft2(x, dim=(-2, -1))
+    freq = torch.fft.fftshift(freq, dim=(-2, -1))
+    freq = freq * gaussian_mask
+    freq = torch.fft.ifftshift(freq, dim=(-2, -1))
+
+    lowpass = torch.fft.ifft2(freq, dim=(-2, -1)).real
+    lowpass = lowpass.clamp(-1.0, 1.0)
+
+    return lowpass.to(images.dtype)
+
+
 def create_run_dirs(runs_dir, experiment_name):
     """
     根据实验名和秒级时间戳创建 run、checkpoints、samples 三个目录。
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_name = f"{experiment_name}_{timestamp[2:]}"
+    run_name = f"{experiment_name}_{timestamp}"
 
     run_dir = os.path.join(runs_dir, run_name)
     checkpoint_dir = os.path.join(run_dir, "checkpoints")
@@ -72,9 +119,7 @@ def find_latest_run_dir(runs_dir, experiment_name):
     ]
 
     if len(run_dirs) == 0:
-        raise FileNotFoundError(
-            f"没有找到实验 {experiment_name} 对应的 run 目录。"
-        )
+        raise FileNotFoundError(f"没有找到实验 {experiment_name} 对应的 run 目录。")
 
     run_dirs = sorted(run_dirs, key=os.path.getmtime, reverse=True)
 

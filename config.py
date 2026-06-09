@@ -8,7 +8,7 @@ import torch
 # ============================================================
 
 # 当前实验名称；训练开始时会拼接秒级时间戳生成唯一 run 目录。
-EXPERIMENT_NAME = "diff_demo_cifar10"
+EXPERIMENT_NAME = "cond_diff_cifar10"
 
 # 项目根目录，也就是当前 config.py 所在目录。
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -50,7 +50,7 @@ IMAGE_SIZE = 32
 IMAGE_CHANNELS = 3
 
 # 条件通道数；普通 DDPM 为 0，后期条件扩散时再改。
-CONDITION_CHANNELS = 0
+CONDITION_CHANNELS = 3
 
 # 训练 batch size。
 BATCH_SIZE = 128

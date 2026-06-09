@@ -1,6 +1,6 @@
 # dataset.py
 import os
-import torch
+
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import CIFAR10, FakeData
@@ -10,7 +10,7 @@ import config
 
 def build_image_transform():
     """
-    构建图像预处理流程，将输入图像转成 Tensor 并归一化到 [-1, 1]。
+    构建图像读取变换：Resize、ToTensor、Normalize 到 [-1, 1]。
     """
     if config.IMAGE_CHANNELS == 1:
         mean = [0.5]
@@ -76,7 +76,7 @@ def build_dataset(train=True):
 
 def build_train_dataloader():
     """
-    构建训练 DataLoader。
+    构建训练 DataLoader，只负责加载数据。
     """
     return DataLoader(
         build_dataset(train=True),
@@ -90,7 +90,7 @@ def build_train_dataloader():
 
 def build_test_dataloader():
     """
-    构建测试 DataLoader。
+    构建测试 DataLoader，只负责加载数据。
     """
     return DataLoader(
         build_dataset(train=False),
@@ -100,30 +100,3 @@ def build_test_dataloader():
         pin_memory=(config.PIN_MEMORY and config.DEVICE == "cuda"),
         drop_last=False,
     )
-
-
-def preprocess_batch(raw_batch, device):
-    """
-    从 DataLoader 输出中取出 image 和 condition，并移动到指定设备。
-    """
-    if isinstance(raw_batch, torch.Tensor):
-        images = raw_batch
-        conditions = None
-
-    elif isinstance(raw_batch, (list, tuple)):
-        images = raw_batch[0]
-        conditions = None
-
-    elif isinstance(raw_batch, dict):
-        images = raw_batch["image"]
-        conditions = raw_batch.get("condition", None)
-
-    else:
-        raise TypeError(f"Unsupported batch type: {type(raw_batch)}")
-
-    images = images.to(device, non_blocking=True).float()
-
-    if conditions is not None:
-        conditions = conditions.to(device, non_blocking=True).float()
-
-    return images, conditions

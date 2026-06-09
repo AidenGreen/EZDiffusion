@@ -6,16 +6,23 @@ from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
 import config
-from dataset import build_train_dataloader, build_test_dataloader, preprocess_batch
+from dataset import build_train_dataloader, build_test_dataloader
 from model import DiffusionModel
-from utils import set_seed, save_sample_grid, create_run_dirs
+from utils import (
+    set_seed,
+    save_sample_grid,
+    create_run_dirs,
+    frequency_lowpass_condition,
+)
 
 
 def main():
     """
-    主训练入口：为本次实验创建独立 run 目录，训练模型、测试、采样和保存权重。
+    主训练入口：加载数据、按需构造低频 condition、训练、测试、采样和保存权重。
     """
     set_seed(config.SEED)
+
+    frequency_keep_rate = 0.25
 
     run_dir, checkpoint_dir, sample_dir = create_run_dirs(
         runs_dir=config.RUNS_DIR,
@@ -37,6 +44,7 @@ def main():
     print(f"Image size     : {config.IMAGE_SIZE}")
     print(f"Channels       : {config.IMAGE_CHANNELS}")
     print(f"Condition      : {config.CONDITION_CHANNELS}")
+    print(f"Lowpass rate   : {frequency_keep_rate}")
     print(f"Prediction     : {config.PREDICTION_TYPE}")
     print(f"Device         : {config.DEVICE}")
     print(f"AMP            : {config.USE_AMP}")
@@ -63,10 +71,15 @@ def main():
         )
 
         for raw_batch in progress_bar:
-            clean_images, conditions = preprocess_batch(
-                raw_batch=raw_batch,
-                device=config.DEVICE,
-            )
+            clean_images = raw_batch[0] if isinstance(raw_batch, (list, tuple)) else raw_batch
+            clean_images = clean_images.to(config.DEVICE, non_blocking=True).float()
+
+            conditions = None
+            if config.CONDITION_CHANNELS != 0:
+                conditions = frequency_lowpass_condition(
+                    images=clean_images,
+                    keep_rate=frequency_keep_rate,
+                )
 
             log_dict = model.train_one_step(
                 clean_images=clean_images,
@@ -74,16 +87,33 @@ def main():
             )
 
             loss = log_dict["loss"]
+            global_step += 1
             epoch_loss_sum += loss
             epoch_step_count += 1
 
             progress_bar.set_postfix(
                 {
                     "step": global_step,
-                    "loss": f"{loss:.4f}",
-                    "best_test": f"{best_test_loss:.4f}",
+                    "loss": f"{loss:.6f}",
+                    "best_test": f"{best_test_loss:.6f}",
                 }
             )
+
+            if global_step % config.PRINT_EVERY_STEPS == 0:
+                elapsed = time.time() - start_time
+
+                print(
+                    f"[Train] "
+                    f"epoch={epoch + 1}, "
+                    f"step={global_step}, "
+                    f"loss={loss:.6f}, "
+                    f"best_test={best_test_loss:.6f}, "
+                    f"elapsed={elapsed:.1f}s"
+                )
+
+                if writer is not None:
+                    writer.add_scalar("loss/train_step", loss, global_step)
+                    writer.add_scalar("lr", model.optimizer.param_groups[0]["lr"], global_step)
 
             if global_step % config.TEST_EVERY_STEPS == 0:
                 test_loss_sum = 0.0
@@ -93,10 +123,15 @@ def main():
                     if test_i >= config.TEST_MAX_BATCHES:
                         break
 
-                    test_images, test_conditions = preprocess_batch(
-                        raw_batch=raw_test_batch,
-                        device=config.DEVICE,
-                    )
+                    test_images = raw_test_batch[0] if isinstance(raw_test_batch, (list, tuple)) else raw_test_batch
+                    test_images = test_images.to(config.DEVICE, non_blocking=True).float()
+
+                    test_conditions = None
+                    if config.CONDITION_CHANNELS != 0:
+                        test_conditions = frequency_lowpass_condition(
+                            images=test_images,
+                            keep_rate=frequency_keep_rate,
+                        )
 
                     test_log = model.eval_one_step(
                         clean_images=test_images,
@@ -109,13 +144,13 @@ def main():
                 test_loss = test_loss_sum / max(test_count, 1)
 
                 print(
-                    f"\n[Test] "
+                    f"[Test] "
                     f"step={global_step}, "
                     f"test_loss={test_loss:.6f}"
                 )
 
                 if writer is not None:
-                    writer.add_scalar("test/test_loss", test_loss, global_step)
+                    writer.add_scalar("loss/test", test_loss, global_step)
 
                 ckpt_name = f"best_step_{global_step:08d}_loss_{test_loss:.6f}.pt"
                 ckpt_path = os.path.join(checkpoint_dir, ckpt_name)
@@ -127,6 +162,7 @@ def main():
                     extra={
                         "test_loss": test_loss,
                         "run_dir": run_dir,
+                        "frequency_keep_rate": frequency_keep_rate,
                     },
                 )
 
@@ -143,6 +179,7 @@ def main():
                         extra={
                             "test_loss": test_loss,
                             "run_dir": run_dir,
+                            "frequency_keep_rate": frequency_keep_rate,
                         },
                     )
 
@@ -154,25 +191,62 @@ def main():
                 model.train()
 
             if global_step % config.SAMPLE_EVERY_STEPS == 0:
-                samples = model.sample(
-                    batch_size=config.TB_SAMPLE_BATCH_SIZE,
-                )
+                raw_sample_batch = next(iter(test_loader))
 
-                sample_path = os.path.join(
-                    sample_dir,
-                    f"sample_step_{global_step:08d}.png",
-                )
+                sample_clean = raw_sample_batch[0] if isinstance(raw_sample_batch, (list, tuple)) else raw_sample_batch
+                sample_clean = sample_clean[:config.TB_SAMPLE_BATCH_SIZE]
+                sample_clean = sample_clean.to(config.DEVICE, non_blocking=True).float()
 
-                grid = save_sample_grid(
+                sample_conditions = None
+                if config.CONDITION_CHANNELS != 0:
+                    sample_conditions = frequency_lowpass_condition(
+                        images=sample_clean,
+                        keep_rate=frequency_keep_rate,
+                    )
+
+                    samples = model.sample(
+                        conditions=sample_conditions,
+                    )
+                else:
+                    samples = model.sample(
+                        batch_size=config.TB_SAMPLE_BATCH_SIZE,
+                    )
+
+                generated_path = os.path.join(sample_dir, f"generated_step_{global_step:08d}.png")
+                target_path = os.path.join(sample_dir, f"target_step_{global_step:08d}.png")
+
+                generated_grid = save_sample_grid(
                     images=samples,
-                    save_path=sample_path,
+                    save_path=generated_path,
                     nrow=config.TB_SAMPLE_NROW,
                 )
 
-                print(f"\n[Sample] saved: {sample_path}")
+                target_grid = save_sample_grid(
+                    images=sample_clean,
+                    save_path=target_path,
+                    nrow=config.TB_SAMPLE_NROW,
+                )
+
+                print(f"[Sample] generated: {generated_path}")
+                print(f"[Sample] target   : {target_path}")
 
                 if writer is not None:
-                    writer.add_image("test/generated", grid, global_step)
+                    writer.add_image("sample/generated", generated_grid, global_step)
+                    writer.add_image("sample/target", target_grid, global_step)
+
+                if config.CONDITION_CHANNELS != 0:
+                    condition_path = os.path.join(sample_dir, f"condition_step_{global_step:08d}.png")
+
+                    condition_grid = save_sample_grid(
+                        images=sample_conditions,
+                        save_path=condition_path,
+                        nrow=config.TB_SAMPLE_NROW,
+                    )
+
+                    print(f"[Sample] condition: {condition_path}")
+
+                    if writer is not None:
+                        writer.add_image("sample/condition", condition_grid, global_step)
 
                 model.train()
 
@@ -183,38 +257,21 @@ def main():
                     epoch=epoch,
                     extra={
                         "run_dir": run_dir,
+                        "frequency_keep_rate": frequency_keep_rate,
                     },
                 )
-                print(f"\n[Save] {latest_ckpt_path}")
-
-            if global_step % config.PRINT_EVERY_STEPS == 0:
-                elapsed = time.time() - start_time
-
-                print(
-                    f"\n[Train] "
-                    f"epoch={epoch + 1}, "
-                    f"step={global_step}, "
-                    f"loss={loss:.4f}, "
-                    f"best_test={best_test_loss:.4f}, "
-                    f"elapsed={elapsed:.1f}s"
-                )
-
-                if writer is not None:
-                    writer.add_scalar("training/train_step", loss, global_step)
-                    writer.add_scalar("training/lr", model.optimizer.param_groups[0]["lr"], global_step)
-
-            global_step += 1
+                print(f"[Save] {latest_ckpt_path}")
 
         epoch_loss = epoch_loss_sum / max(epoch_step_count, 1)
 
         print(
-            f"\n[Epoch] "
+            f"[Epoch] "
             f"epoch={epoch + 1}, "
             f"epoch_loss={epoch_loss:.6f}"
         )
 
         if writer is not None:
-            writer.add_scalar("training/train_epoch", epoch_loss, epoch + 1)
+            writer.add_scalar("loss/train_epoch", epoch_loss, epoch + 1)
 
         model.save_checkpoint(
             path=latest_ckpt_path,
@@ -223,6 +280,7 @@ def main():
             extra={
                 "epoch_loss": epoch_loss,
                 "run_dir": run_dir,
+                "frequency_keep_rate": frequency_keep_rate,
             },
         )
 

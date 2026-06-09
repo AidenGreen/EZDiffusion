@@ -21,3 +21,5 @@ pip install -r _requirements.txt
 5. 打开config.py进行配置
 6. 运行train.py进行训练
 7. 运行test.py进行采样
+
+如需修改添加引导项，则可以
