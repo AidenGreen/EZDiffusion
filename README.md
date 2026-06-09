@@ -1,0 +1,2 @@
+# EZDiffusion
+一个基于diffuser的简单Diffusion调用和封装框架，用于学习原理和简单实验
