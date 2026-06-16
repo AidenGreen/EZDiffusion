@@ -15,7 +15,7 @@ python -m pip install --upgrade pip setuptools wheel
 
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-pip install -r _requirements.txt
+pip install -r _requirement.txt
    
 4. 打开data文件夹，运行cifar_download.py下载数据集
 5. 打开config.py进行配置
