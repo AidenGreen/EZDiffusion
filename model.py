@@ -173,7 +173,7 @@ class DiffusionModel(nn.Module):
         }
 
     @torch.no_grad()
-    def sample(self, batch_size=16, conditions=None):
+    def sample(self, batch_size=1, conditions=None):
         """
         从随机噪声开始反向采样，生成一批图像。
         """

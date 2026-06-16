@@ -1,18 +1,18 @@
 启动训练
 
-F:
-cd F:\Python_Projects\EZDiffusion
+G:
+cd G:\MYJ_project\EZDiffusion
 conda activate .\_env
-set CUDA_VISIBLE_DEVICES=0
+set CUDA_VISIBLE_DEVICES=1
 python train.py
 
 
 启动tensorboard
 
-F:
-cd F:\Python_Projects\EZDiffusion
-conda activate .\_env
-set CUDA_VISIBLE_DEVICES=0
+G:
+cd G:\MYJ_project\EZDiffusion
+conda activate G:\MYJ_env\myj_p310_cu118_csf
+set CUDA_VISIBLE_DEVICES=1
 tensorboard --logdir runs --host 127.0.0.1 --port 6006
 
 http://127.0.0.1:6006

@@ -8,7 +8,7 @@ import torch
 # ============================================================
 
 # 当前实验名称；训练开始时会拼接秒级时间戳生成唯一 run 目录。
-EXPERIMENT_NAME = "cond_diff_cifar10"
+EXPERIMENT_NAME = "cond_diff_myj"
 
 # 项目根目录，也就是当前 config.py 所在目录。
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -44,16 +44,16 @@ os.makedirs(RUNS_DIR, exist_ok=True)
 DATASET_NAME = "cifar10"
 
 # 输入图像尺寸；CIFAR-10 原始尺寸是 32。
-IMAGE_SIZE = 32
+IMAGE_SIZE = 128
 
 # 输入图像通道数；CIFAR-10 是 RGB，所以是 3。
-IMAGE_CHANNELS = 3
+IMAGE_CHANNELS = 1
 
 # 条件通道数；普通 DDPM 为 0，后期条件扩散时再改。
-CONDITION_CHANNELS = 3
+CONDITION_CHANNELS = 1
 
 # 训练 batch size。
-BATCH_SIZE = 128
+BATCH_SIZE = 1
 
 # DataLoader 进程数；Windows 下调试建议 0，稳定后可改 2 或 4。
 NUM_WORKERS = 0
@@ -67,7 +67,7 @@ PIN_MEMORY = True
 # ============================================================
 
 # 训练总 epoch 数。
-EPOCHS = 50
+EPOCHS = 100000
 
 # AdamW 学习率。
 LEARNING_RATE = 1e-4
@@ -82,19 +82,19 @@ GRAD_CLIP_NORM = 1.0
 SEED = 777
 
 # 打印训练日志、写入 TensorBoard 标量的 step 间隔。
-PRINT_EVERY_STEPS = 50
+PRINT_EVERY_STEPS = 10
 
 # 保存 latest.pt 的 step 间隔。
-SAVE_EVERY_STEPS = 500
+SAVE_EVERY_STEPS = 100
 
 # 测试集评估 step 间隔；触发时会计算 test loss，并保存 top-k 最优权重。
-TEST_EVERY_STEPS = 500
+TEST_EVERY_STEPS = 100
 
 # 每次测试最多跑多少个 test batch，避免测试太慢。
-TEST_MAX_BATCHES = 20
+TEST_MAX_BATCHES = 10
 
 # 生成 sample 图像的 step 间隔；触发时写 TensorBoard 并保存到 samples。
-SAMPLE_EVERY_STEPS = 1000
+SAMPLE_EVERY_STEPS = 100
 
 # 保存 test loss 最好的前 K 组权重。
 SAVE_BEST_K = 3
@@ -164,7 +164,7 @@ AMP_DTYPE = torch.float16
 USE_TENSORBOARD = True
 
 # TensorBoard sample 图像每次生成多少张。
-TB_SAMPLE_BATCH_SIZE = 16
+TB_SAMPLE_BATCH_SIZE = 1
 
 # TensorBoard sample 图像网格每行多少张。
-TB_SAMPLE_NROW = 4
+TB_SAMPLE_NROW = 1

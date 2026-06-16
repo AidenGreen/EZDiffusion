@@ -12,7 +12,6 @@ from utils import (
     set_seed,
     save_sample_grid,
     create_run_dirs,
-    frequency_lowpass_condition,
 )
 
 
@@ -71,15 +70,8 @@ def main():
         )
 
         for raw_batch in progress_bar:
-            clean_images = raw_batch[0] if isinstance(raw_batch, (list, tuple)) else raw_batch
-            clean_images = clean_images.to(config.DEVICE, non_blocking=True).float()
-
-            conditions = None
-            if config.CONDITION_CHANNELS != 0:
-                conditions = frequency_lowpass_condition(
-                    images=clean_images,
-                    keep_rate=frequency_keep_rate,
-                )
+            conditions = raw_batch[0].to(config.DEVICE, non_blocking=True).float()
+            clean_images = raw_batch[1].to(config.DEVICE, non_blocking=True).float()
 
             log_dict = model.train_one_step(
                 clean_images=clean_images,
@@ -87,7 +79,6 @@ def main():
             )
 
             loss = log_dict["loss"]
-            global_step += 1
             epoch_loss_sum += loss
             epoch_step_count += 1
 
@@ -112,8 +103,8 @@ def main():
                 )
 
                 if writer is not None:
-                    writer.add_scalar("loss/train_step", loss, global_step)
-                    writer.add_scalar("lr", model.optimizer.param_groups[0]["lr"], global_step)
+                    writer.add_scalar("train/train_step", loss, global_step)
+                    writer.add_scalar("train/lr", model.optimizer.param_groups[0]["lr"], global_step)
 
             if global_step % config.TEST_EVERY_STEPS == 0:
                 test_loss_sum = 0.0
@@ -123,15 +114,11 @@ def main():
                     if test_i >= config.TEST_MAX_BATCHES:
                         break
 
-                    test_images = raw_test_batch[0] if isinstance(raw_test_batch, (list, tuple)) else raw_test_batch
+                    test_images = raw_test_batch[1] if isinstance(raw_test_batch, (list, tuple)) else raw_test_batch
                     test_images = test_images.to(config.DEVICE, non_blocking=True).float()
 
-                    test_conditions = None
-                    if config.CONDITION_CHANNELS != 0:
-                        test_conditions = frequency_lowpass_condition(
-                            images=test_images,
-                            keep_rate=frequency_keep_rate,
-                        )
+                    test_conditions = raw_test_batch[1] if isinstance(raw_test_batch, (list, tuple)) else raw_test_batch
+                    test_conditions = test_conditions.to(config.DEVICE, non_blocking=True).float()
 
                     test_log = model.eval_one_step(
                         clean_images=test_images,
@@ -150,7 +137,7 @@ def main():
                 )
 
                 if writer is not None:
-                    writer.add_scalar("loss/test", test_loss, global_step)
+                    writer.add_scalar("train/test", test_loss, global_step)
 
                 ckpt_name = f"best_step_{global_step:08d}_loss_{test_loss:.6f}.pt"
                 ckpt_path = os.path.join(checkpoint_dir, ckpt_name)
@@ -193,17 +180,15 @@ def main():
             if global_step % config.SAMPLE_EVERY_STEPS == 0:
                 raw_sample_batch = next(iter(test_loader))
 
-                sample_clean = raw_sample_batch[0] if isinstance(raw_sample_batch, (list, tuple)) else raw_sample_batch
+                sample_clean = raw_sample_batch[1]
                 sample_clean = sample_clean[:config.TB_SAMPLE_BATCH_SIZE]
                 sample_clean = sample_clean.to(config.DEVICE, non_blocking=True).float()
 
-                sample_conditions = None
-                if config.CONDITION_CHANNELS != 0:
-                    sample_conditions = frequency_lowpass_condition(
-                        images=sample_clean,
-                        keep_rate=frequency_keep_rate,
-                    )
+                sample_conditions = raw_sample_batch[0]
+                sample_conditions = sample_conditions[:config.TB_SAMPLE_BATCH_SIZE]
+                sample_conditions = sample_conditions.to(config.DEVICE, non_blocking=True).float()
 
+                if config.CONDITION_CHANNELS != 0:
                     samples = model.sample(
                         conditions=sample_conditions,
                     )
@@ -261,6 +246,8 @@ def main():
                     },
                 )
                 print(f"[Save] {latest_ckpt_path}")
+            
+            global_step += 1
 
         epoch_loss = epoch_loss_sum / max(epoch_step_count, 1)
 
@@ -271,7 +258,7 @@ def main():
         )
 
         if writer is not None:
-            writer.add_scalar("loss/train_epoch", epoch_loss, epoch + 1)
+            writer.add_scalar("train/train_epoch", epoch_loss, epoch + 1)
 
         model.save_checkpoint(
             path=latest_ckpt_path,

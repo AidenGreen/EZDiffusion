@@ -1,77 +1,79 @@
 # dataset.py
 import os
-
-from torch.utils.data import DataLoader
-from torchvision import transforms
-from torchvision.datasets import CIFAR10, FakeData
+import numpy as np
+import torch
+import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
 
 import config
 
+normalize = lambda x: (x - x.min()) / (x.max() - x.min() + 1e-6)
 
-def build_image_transform():
-    """
-    构建图像读取变换：Resize、ToTensor、Normalize 到 [-1, 1]。
-    """
-    if config.IMAGE_CHANNELS == 1:
-        mean = [0.5]
-        std = [0.5]
-    elif config.IMAGE_CHANNELS == 3:
-        mean = [0.5, 0.5, 0.5]
-        std = [0.5, 0.5, 0.5]
-    else:
-        raise ValueError("当前 dataset.py 只支持 IMAGE_CHANNELS = 1 或 3。")
+class APDataset(Dataset):
+    def __init__(self, data_root, train=True) -> None:
+        super().__init__()
 
-    transform_list = []
+        self.data_root = data_root
 
-    if config.IMAGE_SIZE != 32:
-        transform_list.append(
-            transforms.Resize(
-                (config.IMAGE_SIZE, config.IMAGE_SIZE),
-                interpolation=transforms.InterpolationMode.BILINEAR,
-            )
+        self.gt_path = os.path.join(data_root, "absolute_phase_normal.npy")
+
+        self.data = [
+            os.path.join(data_root, "absolute_phase_glass.npy"),
+            # os.path.join(data_root, "absolute_phase_metal.npy"),
+        ]
+
+    def __len__(self):
+        return len(self.data)
+
+    def resize_phase(self, phase):
+        """
+        phase: torch.Tensor, shape = [1, H, W]
+        return: shape = [1, IMAGE_SIZE, IMAGE_SIZE]
+        """
+        if phase.shape[-2:] == (config.IMAGE_SIZE, config.IMAGE_SIZE):
+            return phase
+
+        phase = phase.unsqueeze(0)  # [1, 1, H, W]
+
+        phase = F.interpolate(
+            phase,
+            size=(config.IMAGE_SIZE, config.IMAGE_SIZE),
+            mode="bilinear",
+            align_corners=False,
         )
 
-    transform_list += [
-        transforms.ToTensor(),
-        transforms.Normalize(mean, std),
-    ]
+        phase = phase.squeeze(0)  # [1, IMAGE_SIZE, IMAGE_SIZE]
 
-    return transforms.Compose(transform_list)
+        return phase
+
+    def __getitem__(self, index):
+        data_path = self.data[index]
+
+        input_phase = np.load(data_path).astype(np.float32)
+        gt_phase = np.load(self.gt_path).astype(np.float32)
+
+        # NaN 替换为 0，不做其他处理
+        input_phase = np.where(np.isnan(input_phase), 0.0, input_phase)
+        gt_phase = np.where(np.isnan(gt_phase), 0.0, gt_phase)
+
+        input_phase = np.squeeze(input_phase)
+        gt_phase = np.squeeze(gt_phase)
+
+        input_phase = torch.from_numpy(input_phase).float().unsqueeze(0)
+        gt_phase = torch.from_numpy(gt_phase).float().unsqueeze(0)
+
+        input_phase = self.resize_phase(input_phase)
+        gt_phase = self.resize_phase(gt_phase)
+
+        return normalize(input_phase), normalize(gt_phase)
 
 
 def build_dataset(train=True):
     """
     根据 config.DATASET_NAME 构建训练集或测试集。
     """
-    transform = build_image_transform()
-    dataset_name = config.DATASET_NAME.lower()
-
-    if dataset_name == "cifar10":
-        cifar_dir = os.path.join(config.DATA_DIR, "cifar-10-batches-py")
-
-        if not os.path.isdir(cifar_dir):
-            raise FileNotFoundError(
-                "没有找到 CIFAR-10 数据集。\n"
-                f"期望路径：{cifar_dir}\n"
-                "请先运行：python data\\Tool_download.py"
-            )
-
-        return CIFAR10(
-            root=config.DATA_DIR,
-            train=train,
-            download=False,
-            transform=transform,
-        )
-
-    if dataset_name == "fake":
-        return FakeData(
-            size=4096 if train else 512,
-            image_size=(config.IMAGE_CHANNELS, config.IMAGE_SIZE, config.IMAGE_SIZE),
-            num_classes=10,
-            transform=transform,
-        )
-
-    raise ValueError(f"未知数据集: {config.DATASET_NAME}")
+    dataset = APDataset("./data/SimDatas/", train=train)
+    return dataset
 
 
 def build_train_dataloader():
